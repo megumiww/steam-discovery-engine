@@ -1,51 +1,111 @@
 # Steam Discovery Engine
 
-An algorithm-focused Python project for searching and recommending Steam games.
+Steam Discovery Engine is a small, reproducible search and recommendation system for Steam games. It combines metadata retrieval with popularity signals and exposes the models through both a command-line interface and a Streamlit app.
 
-The project will evolve in layers:
+## Features
 
-1. Popularity baseline.
-2. TF-IDF and BM25 content retrieval.
-3. Collaborative filtering and matrix factorization.
-4. Hybrid ranking with offline evaluation.
+- Popularity baseline with Bayesian rating shrinkage.
+- TF-IDF metadata search over titles, genres, tags, and descriptions.
+- BM25 lexical search with document-length normalization.
+- Hybrid ranking that combines BM25, TF-IDF, and popularity scores.
+- Offline evaluation utilities for Precision@K, Recall@K, Hit Rate, and NDCG@K.
+- Streamlit UI with model selection, keyword search, Top-K control, and data-backed fallback behavior.
 
-## Step 1: Data Contract and Popularity Baseline
+## Project layout
 
-The first version uses two CSV files:
+```text
+app.py                         Streamlit interface
+data/raw/games.csv             Game metadata
+data/raw/interactions.csv      User-game interactions
+src/steam_discovery/
+  baseline.py                  PopularityBaseline
+  tfidf.py                     TfidfRetriever
+  bm25.py                      BM25Retriever
+  hybrid.py                    HybridRanker
+  data.py                      CSV-to-dataclass loading
+  evaluation.py                Offline evaluation metrics
+  cli.py                       Command-line entry point
+```
 
-- `data/raw/games.csv` — game metadata and rating statistics.
-- `data/raw/interactions.csv` — user-game feedback used to exclude already-seen games.
+## Setup
 
-Run the baseline after installing the local package:
+The project requires Python 3.11 or newer.
 
 ```powershell
 python -m pip install -e . --no-deps
-python -m steam_discovery.cli --games data/raw/games.csv --interactions data/raw/interactions.csv --user u1 --top-k 5
 ```
 
-The baseline ranks games with a Bayesian rating estimate and a small popularity signal. It is intentionally simple: later algorithms must beat this baseline in offline evaluation.
-
-## Step 2: TF-IDF Content Retrieval
-
-The second model builds TF-IDF vectors from each game's title, genres, tags, and description. It supports both text search and profile-based recommendations using cosine similarity.
+The Streamlit interface also requires Streamlit in the active environment:
 
 ```powershell
-python -m steam_discovery.cli --games data/raw/games.csv --interactions data/raw/interactions.csv --user u1 --mode content --top-k 5
-python -m steam_discovery.cli --games data/raw/games.csv --interactions data/raw/interactions.csv --user u1 --mode content --query 'co-op survival' --top-k 5
+python -m pip install streamlit
 ```
 
-## Step 3: BM25 Search Ranking
+## Run the Streamlit app
 
-The third model builds an inverted index and ranks lexical matches with BM25. Unlike TF-IDF cosine search, BM25 normalizes term frequency and document length, making it a stronger baseline for keyword search.
+From the repository root:
 
 ```powershell
-python -m steam_discovery.cli --games data/raw/games.csv --interactions data/raw/interactions.csv --user u1 --mode bm25 --query 'co-op survival' --top-k 5
+python -m streamlit run app.py
 ```
 
-## Step 4: Hybrid Ranking and Evaluation
+Enter a query such as `survival crafting`, choose a model, and click **推荐**. The app loads games and interactions through `src/steam_discovery/data.py`, maps result objects back to game titles and tags, and displays the model score. If a query has no lexical match, the app uses the real popularity baseline to fill the result list. Mock data is reserved for import or data-loading failures and is marked in the UI.
 
-The hybrid ranker combines normalized BM25, TF-IDF, and popularity signals. The evaluation module provides Precision@K, Recall@K, Hit Rate, and NDCG@K for offline experiments.
+## Run the command-line interface
+
+Popularity baseline:
 
 ```powershell
-python -m steam_discovery.cli --games data/raw/games.csv --interactions data/raw/interactions.csv --user u1 --mode hybrid --query 'co-op survival' --top-k 5
+python -m steam_discovery.cli `
+  --games data/raw/games.csv `
+  --interactions data/raw/interactions.csv `
+  --user u1 `
+  --top-k 5
 ```
+
+TF-IDF search:
+
+```powershell
+python -m steam_discovery.cli `
+  --games data/raw/games.csv `
+  --interactions data/raw/interactions.csv `
+  --mode content `
+  --query "co-op survival" `
+  --top-k 5
+```
+
+BM25 search:
+
+```powershell
+python -m steam_discovery.cli `
+  --games data/raw/games.csv `
+  --interactions data/raw/interactions.csv `
+  --mode bm25 `
+  --query "co-op survival" `
+  --top-k 5
+```
+
+Hybrid search:
+
+```powershell
+python -m steam_discovery.cli `
+  --games data/raw/games.csv `
+  --interactions data/raw/interactions.csv `
+  --mode hybrid `
+  --query "co-op survival" `
+  --top-k 5
+```
+
+## Data contract
+
+`games.csv` contains `game_id`, `title`, `genres`, `tags`, `description`, `positive_ratings`, `negative_ratings`, and `release_year`. Multi-value genre and tag fields use `|` as the separator.
+
+`interactions.csv` contains `user_id`, `game_id`, `signal`, and `timestamp`. Interaction history is used to exclude seen games for user-based recommendations.
+
+## Architecture
+
+`data.py` converts CSV rows into typed `Game` and `Interaction` records. The retrievers operate on those records and return typed result objects containing the matched game, score, and explanation. `app.py` constructs the selected model with the loaded data and adapts those result objects for display.
+
+## Development
+
+Keep retrieval logic in `src/steam_discovery/`, UI behavior in `app.py`, and evaluation code in `evaluation.py`. Use the same CSV inputs when comparing models so offline metrics remain reproducible.

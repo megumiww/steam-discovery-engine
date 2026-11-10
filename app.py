@@ -1,75 +1,85 @@
+from pathlib import Path
+
 import streamlit as st
 
+
 MOCK_DATA = [
-    {"name": "Starfall Frontier", "tags": "Space, Exploration, Sci-Fi", "score": 0.95},
-    {"name": "Ironwood Survival", "tags": "Survival, Crafting, Open World", "score": 0.90},
-    {"name": "Mystic Realms", "tags": "RPG, Fantasy, Magic", "score": 0.86},
-    {"name": "Neon Racer", "tags": "Racing, Futuristic, Arcade", "score": 0.82},
-    {"name": "Farm Tales", "tags": "Farming, Simulation, Relaxing", "score": 0.78},
+    {"title": "Starfall Frontier", "tags": "co-op,sci-fi,survival", "score": 0.92},
+    {"title": "Ironwood Survival", "tags": "survival,open-world", "score": 0.87},
+    {"title": "Mystic Realms", "tags": "rpg,fantasy", "score": 0.81},
+    {"title": "Neon Racer", "tags": "racing,cyberpunk", "score": 0.76},
+    {"title": "Farm Tales", "tags": "farming,simulation", "score": 0.71},
 ]
 
-MODEL_MAP = {
+MODEL_NAMES = {
     "Popularity": "PopularityBaseline",
-    "TF-IDF": "TFIDFRetriever",
+    "TF-IDF": "TfidfRetriever",
     "BM25": "BM25Retriever",
     "Hybrid": "HybridRanker",
 }
 
 
+def _load_data():
+    from src.steam_discovery.data import load_games, load_interactions
+
+    data_dir = Path(__file__).resolve().parent / "data" / "raw"
+    games = load_games(data_dir / "games.csv")
+    interactions = load_interactions(data_dir / "interactions.csv")
+    return games, interactions
+
+
 def _load_model(model_name):
     try:
+        games, interactions = _load_data()
+
         if model_name == "Popularity":
-            from src.steam_discovery.popularity_baseline import PopularityBaseline
+            from src.steam_discovery.baseline import PopularityBaseline
 
-            return PopularityBaseline()
+            return PopularityBaseline(games, interactions)
+
         if model_name == "TF-IDF":
-            from src.steam_discovery.tfidf_retriever import TFIDFRetriever
+            from src.steam_discovery.tfidf import TfidfRetriever
 
-            return TFIDFRetriever()
+            return TfidfRetriever(games, interactions)
+
         if model_name == "BM25":
-            from src.steam_discovery.bm25_retriever import BM25Retriever
+            from src.steam_discovery.bm25 import BM25Retriever
 
-            return BM25Retriever()
+            return BM25Retriever(games)
+
         if model_name == "Hybrid":
-            from src.steam_discovery.hybrid_ranker import HybridRanker
+            from src.steam_discovery.hybrid import HybridRanker
 
-            return HybridRanker()
+            return HybridRanker(games, interactions)
     except Exception:
         return None
 
     return None
 
 
-def _call_model(model, query, top_k):
+def _retrieve(model, model_name, query, top_k):
     if model is None:
         return []
 
-    methods = ("recommend", "retrieve", "search", "get_recommendations", "rank")
+    try:
+        if model_name == "Popularity":
+            return model.recommend(query, top_k)
+        results = model.search(query, top_k)
+        if results:
+            return results
 
-    for method_name in methods:
-        method = getattr(model, method_name, None)
-        if not callable(method):
-            continue
+        # An out-of-vocabulary query should still return real catalog items.
+        # Use the project's popularity baseline as a data-backed fallback;
+        # Mock data is reserved for import/data failures.
+        from src.steam_discovery.baseline import PopularityBaseline
 
-        for call in (
-            lambda: method(query, top_k),
-            lambda: method(query=query, top_k=top_k),
-            lambda: method(query, k=top_k),
-            lambda: method(query),
-        ):
-            try:
-                result = call()
-                if result is not None:
-                    return result
-            except TypeError:
-                continue
-            except Exception:
-                return []
-
-    return []
+        games, interactions = _load_data()
+        return PopularityBaseline(games, interactions).recommend(query, top_k)
+    except Exception:
+        return []
 
 
-def _extract_value(item, keys, default=None):
+def _value(item, *keys, default=None):
     if isinstance(item, dict):
         for key in keys:
             if key in item:
@@ -83,50 +93,44 @@ def _extract_value(item, keys, default=None):
 
 
 def _format_tags(value):
-    if value is None:
-        return "未知"
     if isinstance(value, (list, tuple, set)):
-        return ", ".join(str(tag) for tag in value)
-    return str(value)
+        return ",".join(str(tag) for tag in value)
+    return str(value or "")
 
 
-def _normalize_results(results, top_k):
-    if results is None:
-        return []
+def _display_results(raw_results, top_k):
+    displayed = []
 
-    if isinstance(results, dict):
-        for key in ("results", "recommendations", "items", "games", "data"):
-            if key in results:
-                results = results[key]
-                break
+    for item in list(raw_results or [])[:top_k]:
+        game = _value(item, "game")
+        game_id = _value(item, "game_id", "id", "app_id")
+        score = _value(item, "score", "similarity", "relevance", default=0.0)
+
+        if game is not None:
+            game_id = _value(game, "game_id", "id", "app_id", default=game_id)
+            title = _value(game, "title", "name", default=game_id)
+            tags = _value(game, "tags", default="")
         else:
-            results = [results]
+            title = _value(item, "title", "name", default=game_id)
+            tags = _value(item, "tags", default="")
 
-    if not isinstance(results, (list, tuple)):
-        try:
-            results = list(results)
-        except Exception:
-            results = [results]
-
-    normalized = []
-    for item in list(results)[:top_k]:
-        if isinstance(item, (list, tuple)):
-            name = item[0] if len(item) > 0 else "未知游戏"
-            score = item[1] if len(item) > 1 else 0.0
-            tags = item[2] if len(item) > 2 else "未知"
-        else:
-            name = _extract_value(item, ("name", "game_name", "title", "app_name", "game"), "未知游戏")
-            tags = _extract_value(item, ("tags", "genres", "genre", "categories"), "未知")
-            score = _extract_value(item, ("score", "similarity", "rank_score", "relevance", "rating"), 0.0)
+        if title is None:
+            continue
 
         try:
             score = float(score)
         except (TypeError, ValueError):
             score = 0.0
 
-        normalized.append({"name": str(name), "tags": _format_tags(tags), "score": score})
+        displayed.append(
+            {
+                "title": str(title),
+                "tags": _format_tags(tags),
+                "score": score,
+            }
+        )
 
-    return normalized
+    return displayed
 
 
 def main():
@@ -136,8 +140,8 @@ def main():
 
     model_name = st.sidebar.selectbox(
         "选择推荐模型",
-        options=list(MODEL_MAP.keys()),
-        format_func=lambda name: f"{name} ({MODEL_MAP[name]})",
+        list(MODEL_NAMES),
+        format_func=lambda name: f"{name} ({MODEL_NAMES[name]})",
     )
     top_k = st.sidebar.slider("推荐数量", min_value=1, max_value=10, value=5)
     query = st.text_input("输入游戏关键词", placeholder="例如：survival crafting")
@@ -148,20 +152,25 @@ def main():
             return
 
         model = _load_model(model_name)
-        results = _normalize_results(_call_model(model, query.strip(), top_k), top_k)
+        results = _display_results(
+            _retrieve(model, model_name, query.strip(), top_k),
+            top_k,
+        )
+        using_mock = not results
 
-        if not results:
+        if using_mock:
             results = MOCK_DATA[:top_k]
-            st.info("真实检索结果不可用，已使用内置 Mock 数据。")
 
         st.subheader(f"推荐结果 · {model_name}")
+        if using_mock:
+            st.caption("当前展示模拟数据")
+
         for index, result in enumerate(results, start=1):
-            with st.container():
-                col1, col2, col3 = st.columns([3, 4, 1])
-                col1.write(f"**{index}. {result['name']}**")
-                col2.write(f"标签：{result['tags']}")
-                col3.write(f"{result['score']:.3f}")
-                st.divider()
+            col1, col2, col3 = st.columns([3, 4, 1])
+            col1.write(f"**{index}. {result['title']}**")
+            col2.write(f"标签：{result['tags']}")
+            col3.write(f"{result['score']:.3f}")
+            st.divider()
 
 
 if __name__ == "__main__":
