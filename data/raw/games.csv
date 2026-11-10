@@ -1,0 +1,11 @@
+game_id,title,genres,tags,description,positive_ratings,negative_ratings,release_year
+g001,Starfall Frontier,Action|RPG,space|co-op|exploration,Explore a dangerous galaxy with a small crew.,9200,1100,2022
+g002,Ironwood Survival,Survival|Adventure,crafting|survival|open-world,Collect resources and build a shelter in a hostile wilderness.,8700,1300,2021
+g003,Neon Circuit,Racing|Action,racing|arcade|multiplayer,Compete in fast neon races with online rivals.,7800,900,2023
+g004,Kingdom Tactics,Strategy|RPG,strategy|turn-based|fantasy,Plan turn-based battles and manage a growing kingdom.,6400,800,2020
+g005,Deep Sea Colony,Simulation|Strategy,simulation|management|underwater,Build and optimize a research colony below the ocean.,5100,700,2022
+g006,Pixel Detective,Adventure|Indie,story-rich|puzzle|detective,Solve a series of mysteries in a handcrafted pixel city.,4600,500,2019
+g007,Mecha Arena,Action|Multiplayer,mechs|competitive|team-based,Customize a combat machine and fight in team arenas.,8300,2100,2021
+g008,Quiet Mountains,Adventure|Indie,exploration|walking-sim|story-rich,Discover a quiet mountain village and its hidden history.,3900,300,2018
+g009,Orbital Factory,Simulation|Strategy,factory|automation|space,Design an automated orbital production network.,7200,1000,2023
+g010,Mythic Garden,Simulation|Casual,relaxing|building|fantasy,Grow a magical garden and trade resources with friends.,3500,250,2020
